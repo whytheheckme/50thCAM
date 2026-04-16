@@ -1,0 +1,174 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+  <title>50thCAM Kiosk</title>
+  <style type="text/css">
+    body { font-family: Arial, sans-serif; background: #111; color: #fff; margin: 0; }
+    #wrap { width: 1200px; margin: 0 auto; padding: 20px; }
+    h1 { margin: 0 0 10px; }
+    .row { margin-top: 15px; }
+    #preview { width: 100%; max-width: 960px; border: 2px solid #333; }
+    .button { padding: 12px 20px; border: 1px solid #666; background: #222; color: #fff; font-size: 22px; cursor: pointer; margin-right: 10px; }
+    .button:disabled { opacity: 0.5; cursor: default; }
+    .hidden { display: none; }
+    .grid img { width: 31%; margin-right: 2%; border: 2px solid #333; }
+    label { display: block; margin-bottom: 8px; font-size: 20px; }
+    input { width: 520px; padding: 8px; font-size: 20px; margin-bottom: 15px; }
+    #status { font-size: 18px; color: #a3d6ff; min-height: 24px; }
+  </style>
+</head>
+<body>
+  <div id="wrap">
+    <h1>50thCAM Photo Booth</h1>
+    <div id="status"></div>
+
+    <div id="idleView" class="row">
+      <img id="preview" src="/preview.jpg" alt="Camera preview" />
+      <div class="row">
+        <button id="captureBtn" class="button">Take photo</button>
+      </div>
+    </div>
+
+    <div id="reviewView" class="row hidden">
+      <div class="grid">
+        <img id="imgWatermarked" alt="Watermarked" />
+        <img id="imgFiltered" alt="1976 Edition" />
+        <img id="imgSocial" alt="Social" />
+      </div>
+      <div class="row">
+        <button id="retakeBtn" class="button">Re-take</button>
+        <button id="sendBtn" class="button">Send</button>
+        <button id="cancelBtn" class="button">Cancel</button>
+      </div>
+    </div>
+
+    <div id="sendView" class="row hidden">
+      <label>Name</label>
+      <input type="text" id="name" />
+      <label>Email</label>
+      <input type="text" id="email" />
+      <div class="row">
+        <button id="submitSendBtn" class="button">Send photos</button>
+        <button id="backBtn" class="button">Back</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="text/javascript">
+  (function() {
+    var currentImageId = null;
+    var refreshTimer = null;
+
+    function $(id) { return document.getElementById(id); }
+
+    function showStatus(msg) { $("status").innerHTML = msg || ""; }
+
+    function show(viewId) {
+      $("idleView").className = "row hidden";
+      $("reviewView").className = "row hidden";
+      $("sendView").className = "row hidden";
+      $(viewId).className = "row";
+    }
+
+    function startPreviewRefresh() {
+      stopPreviewRefresh();
+      refreshTimer = setInterval(function() {
+        $("preview").src = "/preview.jpg?t=" + new Date().getTime();
+      }, 1500);
+    }
+
+    function stopPreviewRefresh() {
+      if (refreshTimer) {
+        clearInterval(refreshTimer);
+        refreshTimer = null;
+      }
+    }
+
+    function xhr(method, url, body, done) {
+      var req = new XMLHttpRequest();
+      req.open(method, url, true);
+      req.setRequestHeader("Content-Type", "application/json");
+      req.onreadystatechange = function() {
+        if (req.readyState === 4) {
+          var payload = {};
+          try { payload = eval("(" + req.responseText + ")"); } catch (e) {}
+          done(req.status, payload);
+        }
+      };
+      req.send(body ? body : null);
+    }
+
+    $("captureBtn").onclick = function() {
+      showStatus("Capturing...");
+      $("captureBtn").disabled = true;
+      stopPreviewRefresh();
+      xhr("POST", "/api/capture", "{}", function(status, payload) {
+        $("captureBtn").disabled = false;
+        if (status !== 200 || !payload.ok) {
+          showStatus("Capture failed: " + (payload.error || "Unknown error"));
+          show("idleView");
+          startPreviewRefresh();
+          return;
+        }
+
+        currentImageId = payload.images.id;
+        $("imgWatermarked").src = "/captures/" + payload.images.watermarked;
+        $("imgFiltered").src = "/captures/" + payload.images.filtered;
+        $("imgSocial").src = "/captures/" + payload.images.social;
+        showStatus("Preview your photos.");
+        show("reviewView");
+      });
+    };
+
+    $("retakeBtn").onclick = function() {
+      currentImageId = null;
+      showStatus("Ready.");
+      show("idleView");
+      startPreviewRefresh();
+    };
+
+    $("cancelBtn").onclick = function() {
+      currentImageId = null;
+      showStatus("Cancelled. Ready for next photo.");
+      show("idleView");
+      startPreviewRefresh();
+    };
+
+    $("sendBtn").onclick = function() {
+      show("sendView");
+      showStatus("Enter recipient information.");
+    };
+
+    $("backBtn").onclick = function() {
+      show("reviewView");
+      showStatus("Preview your photos.");
+    };
+
+    $("submitSendBtn").onclick = function() {
+      var name = $("name").value;
+      var email = $("email").value;
+      var payload = '{"name":"' + name.replace(/"/g, '') + '","email":"' + email.replace(/"/g, '') + '","image_id":"' + currentImageId + '"}';
+      showStatus("Sending email...");
+
+      xhr("POST", "/api/send", payload, function(status, resp) {
+        if (status !== 200 || !resp.ok) {
+          showStatus("Send failed: " + (resp.error || "Unknown error"));
+          return;
+        }
+        $("name").value = "";
+        $("email").value = "";
+        currentImageId = null;
+        showStatus("Email sent. Ready for next photo.");
+        show("idleView");
+        startPreviewRefresh();
+      });
+    };
+
+    show("idleView");
+    showStatus("Ready.");
+    startPreviewRefresh();
+  })();
+  </script>
+</body>
+</html>
