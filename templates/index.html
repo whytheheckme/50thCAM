@@ -26,7 +26,8 @@
     <div id="idleView" class="row">
       <img id="preview" src="/preview.jpg" alt="Camera preview" />
       <div class="row">
-        <button id="captureBtn" class="button">Take photo</button>
+        <button id="previewBtn" class="button">Preview Photo</button>
+        <button id="captureBtn" class="button">Take Photo</button>
       </div>
     </div>
 
@@ -58,7 +59,6 @@
   <script type="text/javascript">
   (function() {
     var currentImageId = null;
-    var refreshTimer = null;
 
     function $(id) { return document.getElementById(id); }
 
@@ -71,18 +71,8 @@
       $(viewId).className = "row";
     }
 
-    function startPreviewRefresh() {
-      stopPreviewRefresh();
-      refreshTimer = setInterval(function() {
-        $("preview").src = "/preview.jpg?t=" + new Date().getTime();
-      }, 1500);
-    }
-
-    function stopPreviewRefresh() {
-      if (refreshTimer) {
-        clearInterval(refreshTimer);
-        refreshTimer = null;
-      }
+    function refreshPreviewImage() {
+      $("preview").src = "/preview.jpg?t=" + new Date().getTime();
     }
 
     function xhr(method, url, body, done) {
@@ -99,16 +89,24 @@
       req.send(body ? body : null);
     }
 
+    $("previewBtn").onclick = function() {
+      showStatus("Capturing preview...");
+      $("previewBtn").disabled = true;
+      refreshPreviewImage();
+      setTimeout(function() {
+        $("previewBtn").disabled = false;
+        showStatus("Preview updated.");
+      }, 800);
+    };
+
     $("captureBtn").onclick = function() {
       showStatus("Capturing...");
       $("captureBtn").disabled = true;
-      stopPreviewRefresh();
       xhr("POST", "/api/capture", "{}", function(status, payload) {
         $("captureBtn").disabled = false;
         if (status !== 200 || !payload.ok) {
           showStatus("Capture failed: " + (payload.error || "Unknown error"));
           show("idleView");
-          startPreviewRefresh();
           return;
         }
 
@@ -125,14 +123,12 @@
       currentImageId = null;
       showStatus("Ready.");
       show("idleView");
-      startPreviewRefresh();
     };
 
     $("cancelBtn").onclick = function() {
       currentImageId = null;
       showStatus("Cancelled. Ready for next photo.");
       show("idleView");
-      startPreviewRefresh();
     };
 
     $("sendBtn").onclick = function() {
@@ -161,13 +157,12 @@
         currentImageId = null;
         showStatus("Email sent. Ready for next photo.");
         show("idleView");
-        startPreviewRefresh();
       });
     };
 
     show("idleView");
     showStatus("Ready.");
-    startPreviewRefresh();
+    refreshPreviewImage();
   })();
   </script>
 </body>
